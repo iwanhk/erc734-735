@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.12;
 
-import "../node_modules/openzeppelin-solidity/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./Pausable.sol";
 import "./ERC734.sol";
 import "./ERC735.sol";
@@ -16,7 +16,7 @@ abstract contract ClaimManager is Pausable, ERC735 {
     using ECDSA for bytes32;
     using ERC165Query for address;
 
-    bytes constant internal ETH_PREFIX = "\x19Ethereum Signed Message:\n32";
+    bytes internal constant ETH_PREFIX = "\x19Ethereum Signed Message:\n32";
 
     struct Claim {
         uint256 topic;
@@ -31,7 +31,7 @@ abstract contract ClaimManager is Pausable, ERC735 {
     mapping(uint256 => bytes32[]) internal claimsByTopic;
     uint public numClaims;
 
-  /// @dev Requests the ADDITION or the CHANGE of a claim from an issuer.
+    /// @dev Requests the ADDITION or the CHANGE of a claim from an issuer.
     ///  Claims can requested to be added by anybody, including the claim holder itself (self issued).
     /// @param _topic Type of claim
     /// @param _scheme Scheme used for the signatures
@@ -47,29 +47,51 @@ abstract contract ClaimManager is Pausable, ERC735 {
         bytes memory _signature,
         bytes memory _data,
         string memory _uri
-    )
-        public
-        whenNotPaused
-        override
-        returns (uint256 claimRequestId)
-    {
+    ) public override whenNotPaused returns (uint256 claimRequestId) {
         // Check signature
-        require(_validSignature(_topic, _scheme, issuer, _signature, _data), "addClaim invalid signature");
+        require(
+            _validSignature(_topic, _scheme, issuer, _signature, _data),
+            "addClaim invalid signature"
+        );
         // Check we can perform action
         bool noApproval = _managementOrSelf();
 
         if (!noApproval) {
             // SHOULD be approved or rejected by n of m approve calls from keys of purpose 1
             claimRequestId = this.execute(address(this), 0, msg.data);
-            emit ClaimRequested(claimRequestId, _topic, _scheme, issuer, _signature, _data, _uri);
+            emit ClaimRequested(
+                claimRequestId,
+                _topic,
+                _scheme,
+                issuer,
+                _signature,
+                _data,
+                _uri
+            );
             return claimRequestId;
         }
 
         bytes32 claimId = getClaimId(issuer, _topic);
         if (claims[claimId].issuer == address(0)) {
-            _addClaim(claimId, _topic, _scheme, issuer, _signature, _data, _uri);
+            _addClaim(
+                claimId,
+                _topic,
+                _scheme,
+                issuer,
+                _signature,
+                _data,
+                _uri
+            );
         } else {
-            _changeClaim(claimId, _topic, _scheme, issuer, _signature, _data, _uri);
+            _changeClaim(
+                claimId,
+                _topic,
+                _scheme,
+                issuer,
+                _signature,
+                _data,
+                _uri
+            );
         }
     }
 
@@ -92,28 +114,41 @@ abstract contract ClaimManager is Pausable, ERC735 {
         string memory _uri
     )
         public
+        override
         whenNotPaused
         onlyManagementOrSelfOrIssuer(_claimId)
-        override
         returns (bool success)
     {
         Claim memory c = claims[_claimId];
         // Must exist
         require(c.issuer != address(0), "issuer must exist");
         // Check signature
-        require(_validSignature(_topic, _scheme, issuer, _signature, _data), "changeClaim invalid signature");
-        _changeClaim(_claimId, _topic, _scheme, issuer, _signature, _data, _uri);
+        require(
+            _validSignature(_topic, _scheme, issuer, _signature, _data),
+            "changeClaim invalid signature"
+        );
+        _changeClaim(
+            _claimId,
+            _topic,
+            _scheme,
+            issuer,
+            _signature,
+            _data,
+            _uri
+        );
         return true;
     }
 
     /// @dev Removes a claim. Can only be removed by the claim issuer, or the claim holder itself.
     /// @param _claimId Claim ID to remove
     /// @return success `true` if the claim is found and removed
-    function removeClaim(bytes32 _claimId)
+    function removeClaim(
+        bytes32 _claimId
+    )
         public
+        override
         whenNotPaused
         onlyManagementOrSelfOrIssuer(_claimId)
-        override
         returns (bool success)
     {
         Claim memory c = claims[_claimId];
@@ -134,7 +169,15 @@ abstract contract ClaimManager is Pausable, ERC735 {
         // Decrement
         numClaims--;
         // Event
-        emit ClaimRemoved(_claimId, c.topic, c.scheme, c.issuer, c.signature, c.data, c.uri);
+        emit ClaimRemoved(
+            _claimId,
+            c.topic,
+            c.scheme,
+            c.issuer,
+            c.signature,
+            c.data,
+            c.uri
+        );
         return true;
     }
 
@@ -145,7 +188,9 @@ abstract contract ClaimManager is Pausable, ERC735 {
     /// @return signature Claim data
     /// @return data Claim data
     /// @return uri Claim data
-    function getClaim(bytes32 _claimId)
+    function getClaim(
+        bytes32 _claimId
+    )
         public
         view
         override
@@ -171,19 +216,18 @@ abstract contract ClaimManager is Pausable, ERC735 {
     /// @dev Returns claims by type
     /// @param _topic Type of claims to return
     /// @return claimIds Array of claim IDs
-    function getClaimIdsByType(uint256 _topic)
-        public
-        view
-        override
-        returns(bytes32[] memory claimIds)
-    {
+    function getClaimIdsByType(
+        uint256 _topic
+    ) public view override returns (bytes32[] memory claimIds) {
         claimIds = claimsByTopic[_topic];
     }
 
     /// @dev Refresh a given claim. If no longer valid, it will remove it
     /// @param _claimId Claim ID to refresh
     /// @return `true` if claim is still valid, `false` if it was invalid and removed
-    function refreshClaim(bytes32 _claimId)
+    function refreshClaim(
+        bytes32 _claimId
+    )
         public
         whenNotPaused
         onlyManagementOrSelfOrIssuer(_claimId)
@@ -193,7 +237,9 @@ abstract contract ClaimManager is Pausable, ERC735 {
         Claim memory c = claims[_claimId];
         require(c.issuer != address(0), "issuer must exist");
         // Check claim is still valid
-        if (!_validSignature(c.topic, c.scheme, c.issuer, c.signature, c.data)) {
+        if (
+            !_validSignature(c.topic, c.scheme, c.issuer, c.signature, c.data)
+        ) {
             // Remove claim
             removeClaim(_claimId);
             return false;
@@ -207,11 +253,10 @@ abstract contract ClaimManager is Pausable, ERC735 {
     /// @param issuer Address of issuer
     /// @param topic Claim topic
     /// @return Claim ID hash
-    function getClaimId(address issuer, uint256 topic)
-        public
-        pure
-        returns (bytes32)
-    {
+    function getClaimId(
+        address issuer,
+        uint256 topic
+    ) public pure returns (bytes32) {
         // TODO: Doesn't allow multiple claims from the same issuer with the same type
         // This is particularly inconvenient for self-claims (e.g. self-claim multiple labels)
         return keccak256(abi.encodePacked(issuer, topic));
@@ -222,11 +267,11 @@ abstract contract ClaimManager is Pausable, ERC735 {
     /// @param topic Claim topic
     /// @param data Data for the claim
     /// @return Hash to be signed by claim issuer
-    function claimToSign(address subject, uint256 topic, bytes memory data)
-        public
-        pure
-        returns (bytes32)
-    {
+    function claimToSign(
+        address subject,
+        uint256 topic,
+        bytes memory data
+    ) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(subject, topic, data));
     }
 
@@ -234,12 +279,12 @@ abstract contract ClaimManager is Pausable, ERC735 {
     /// @param toSign Hash to be signed, potentially generated with `claimToSign`
     /// @param signature Signature data i.e. signed hash
     /// @return address recovered from `signature` which signed the `toSign` hash
-    function getSignatureAddress(bytes32 toSign, bytes memory signature)
-        public
-        pure
-        returns (address)
-    {
-        return keccak256(abi.encodePacked(ETH_PREFIX, toSign)).recover(signature);
+    function getSignatureAddress(
+        bytes32 toSign,
+        bytes memory signature
+    ) public pure returns (address) {
+        return
+            keccak256(abi.encodePacked(ETH_PREFIX, toSign)).recover(signature);
     }
 
     /// @dev Checks if a given claim is valid
@@ -255,25 +300,32 @@ abstract contract ClaimManager is Pausable, ERC735 {
         address issuer,
         bytes memory _signature,
         bytes memory _data
-    )
-        internal
-        view
-        returns (bool)
-    {
+    ) internal view returns (bool) {
         if (_scheme == ECDSA_SCHEME) {
-            address signedBy = getSignatureAddress(claimToSign(address(this), _topic, _data), _signature);
+            address signedBy = getSignatureAddress(
+                claimToSign(address(this), _topic, _data),
+                _signature
+            );
             if (issuer == signedBy) {
                 // Issuer signed the signature
                 return true;
-            } else
-            if (issuer == address(this)) {
-                return KeyStore.find(allKeys, addrToKey(signedBy), CLAIM_SIGNER_KEY);
+            } else if (issuer == address(this)) {
+                return
+                    KeyStore.find(
+                        allKeys,
+                        addrToKey(signedBy),
+                        CLAIM_SIGNER_KEY
+                    );
             } else {
                 if (issuer.doesContractImplementInterface(ERC734ID())) {
                     // Issuer is an Identity contract
                     // It should hold the key with which the above message was signed.
                     // If the key is not present anymore, the claim SHOULD be treated as invalid.
-                    return ERC734(issuer).keyHasPurpose(addrToKey(signedBy), CLAIM_SIGNER_KEY);
+                    return
+                        ERC734(issuer).keyHasPurpose(
+                            addrToKey(signedBy),
+                            CLAIM_SIGNER_KEY
+                        );
                 }
             }
             // Invalid
@@ -294,14 +346,19 @@ abstract contract ClaimManager is Pausable, ERC735 {
         // solhint-disable-next-line no-empty-blocks
         if (_managementOrSelf()) {
             // Valid
-        } else
+        }
         // solhint-disable-next-line no-empty-blocks
-        if (msg.sender == issuer) {
+        else if (msg.sender == issuer) {
             // MUST only be done by the issuer of the claim
-        } else
-        if (issuer.doesContractImplementInterface(ERC734ID())) {
+        } else if (issuer.doesContractImplementInterface(ERC734ID())) {
             // Issuer is another Identity contract, is this an execution key?
-            require(ERC734(issuer).keyHasPurpose(addrToKey(msg.sender), EXECUTION_KEY), "issuer contract missing execution key");
+            require(
+                ERC734(issuer).keyHasPurpose(
+                    addrToKey(msg.sender),
+                    EXECUTION_KEY
+                ),
+                "issuer contract missing execution key"
+            );
         } else {
             // Invalid! Sender is NOT Management or Self or Issuer
             require(false, "only management or self or issuer");
@@ -325,14 +382,27 @@ abstract contract ClaimManager is Pausable, ERC735 {
         bytes memory _signature,
         bytes memory _data,
         string memory _uri
-    )
-        internal
-    {
+    ) internal {
         // New claim
-        claims[_claimId] = Claim(_topic, _scheme, issuer, _signature, _data, _uri);
+        claims[_claimId] = Claim(
+            _topic,
+            _scheme,
+            issuer,
+            _signature,
+            _data,
+            _uri
+        );
         claimsByTopic[_topic].push(_claimId);
         numClaims++;
-        emit ClaimAdded(_claimId, _topic, _scheme, issuer, _signature, _data, _uri);
+        emit ClaimAdded(
+            _claimId,
+            _topic,
+            _scheme,
+            issuer,
+            _signature,
+            _data,
+            _uri
+        );
     }
 
     /// @dev Change claim data to the identity without checking if it already exists
@@ -351,9 +421,7 @@ abstract contract ClaimManager is Pausable, ERC735 {
         bytes memory _signature,
         bytes memory _data,
         string memory _uri
-    )
-        internal
-    {
+    ) internal {
         // Existing claim
         Claim storage c = claims[_claimId];
         // You can't change issuer or topic without affecting the claimId, so we
@@ -364,6 +432,14 @@ abstract contract ClaimManager is Pausable, ERC735 {
         c.signature = _signature;
         c.data = _data;
         c.uri = _uri;
-        emit ClaimChanged(_claimId, _topic, _scheme, issuer, _signature, _data, _uri);
+        emit ClaimChanged(
+            _claimId,
+            _topic,
+            _scheme,
+            issuer,
+            _signature,
+            _data,
+            _uri
+        );
     }
 }
